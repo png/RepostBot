@@ -3,9 +3,11 @@ import argparse
 import re
 from dotenv import load_dotenv
 import requests
+import io
 
 import discord
-import hashlib
+import imagehash
+from PIL import Image
 
 from db import Database
 
@@ -27,6 +29,8 @@ def get_args():
     parser.add_argument('password',
                         help='Password for mongodb', type=str)
     parser.add_argument('collection', help='Colleciton name', type=str)
+    parser.add_argument(
+        '-threshold', help='Hamming distance threshold', default=10, type=float)
 
     return(parser.parse_args())
 
@@ -56,7 +60,8 @@ def handle_images(attachments):
     for attachment in attachments:
         if(attachment.url[0:39] == 'https://cdn.discordapp.com/attachments/'):
             req = requests.get(attachment.url)
-            hashes.append(hashlib.sha256(req._content).hexdigest())
+            img = Image.open(io.BytesIO(req._content))
+            hashes.append(str(imagehash.whash(img)))
 
     return hashes
 
@@ -70,26 +75,38 @@ async def on_ready():
 async def on_message(message):
     if message.author == client.user:
         return
-    
-    # images
+
     if(message.attachments):
         hashes = handle_images(message.attachments)
-    # links
+        hash_type = 'image'
     else:
         content = message.content
         if(link_format.match(content)):
             content = content.encode('utf-8')
             hashes = [hashlib.sha256(content).hexdigest()]
+            hash_type = 'link'
 
     for hash in hashes:
-        result = db.cursor.find_one({'content': hash})
-        if(result):
-            await message.reply(f"Repost: {result['link']}")
+        results = []
+        if(hash_type == 'link'):
+            results.append(db.cursor.find_one(
+                {'content': hash, 'type': hash_type}))
+        elif(hash_type == 'image'):
+            # source for perceptual hashing: https://lvngd.com/blog/determining-how-similar-two-images-are-python-perceptual-hashing/
+            db_result = db.cursor.find({'type': hash_type})
+            for image in db_result:
+                hamming = int(hash, 16) - int(image['content'], 16)
+                if(hamming < args.threshold):
+                    results.append(image)
+
+        if(results):
+            await message.reply(f"Repost: {', '.join([entry['link'] for entry in results])}")
             await message.add_reaction('🚨')
         else:
             link = f"https://discord.com/channels/{message.guild.id}/{message.channel.id}/{message.id}"
             print(f"Saving link: {link}")
-            db.cursor.insert_one({'link': link, 'content' : hash})
+            db.cursor.insert_one(
+                {'link': link, 'content': hash, 'type': hash_type})
 
 
 if __name__ == '__main__':

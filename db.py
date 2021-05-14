@@ -7,6 +7,7 @@ class Database:
         username = urllib.parse.quote_plus(username)
         password = urllib.parse.quote_plus(password)
 
-        client = MongoClient('mongodb://%s:%s@127.0.0.1/?authSource=%s' % (username, password, collection))
+        client = MongoClient(
+            'mongodb://%s:%s@127.0.0.1/?authSource=%s' % (username, password, collection))
         db = getattr(client, collection)
         self.cursor = db.Messages
