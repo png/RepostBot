@@ -2,6 +2,7 @@ import os
 import argparse
 import re
 from dotenv import load_dotenv
+import requests
 
 import discord
 import hashlib
@@ -41,6 +42,16 @@ client = discord.Client()
 link_format = re.compile('http[s]?:\/\/.*')
 
 
+def handle_images(attachments):
+    hashes = []
+    for attachment in attachments:
+        if(attachment.url[0:39] == 'https://cdn.discordapp.com/attachments/'):
+            req = requests.get(attachment.url)
+            hashes.append(hashlib.sha256(req._content).hexdigest())
+
+    return hashes
+
+
 @client.event
 async def on_ready():
     print(f'{client.user} has connected to Discord!')
@@ -51,14 +62,17 @@ async def on_message(message):
     if message.author == client.user:
         return
     
-    # TODO images
+    # images
+    if(message.attachments):
+        hashes = handle_images(message.attachments)
+    # links
+    else:
+        content = message.content
+        if(link_format.match(content)):
+            content = content.encode('utf-8')
+            hashes = [hashlib.sha256(content).hexdigest()]
 
-    content = message.content
-    # only save links
-
-    if(link_format.match(content)):
-        content = content.encode('utf-8')
-        hash = hashlib.sha256(content).hexdigest()
+    for hash in hashes:
         result = db.cursor.find_one({'content': hash})
         if(result):
             await message.reply(f"Repost: {result['link']}")
