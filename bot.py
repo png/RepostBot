@@ -9,6 +9,7 @@ import discord
 import imagehash
 import hashlib
 from PIL import Image
+from urllib.parse import urlparse
 
 from db import Database
 
@@ -31,7 +32,7 @@ def get_args():
                         help='Password for mongodb', type=str)
     parser.add_argument('collection', help='Colleciton name', type=str)
     parser.add_argument(
-        '-threshold', help='Hamming distance threshold', default=10, type=float)
+        '-threshold', help='Hamming distance threshold', default=3, type=float)
 
     return(parser.parse_args())
 
@@ -59,7 +60,7 @@ def handle_images(attachments):
     '''
     hashes = []
     for attachment in attachments:
-        if(attachment.url[0:39] == 'https://cdn.discordapp.com/attachments/'):
+        if(attachment.url[:39] == 'https://cdn.discordapp.com/attachments/'):
             req = requests.get(attachment.url)
             img = Image.open(io.BytesIO(req._content))
             hashes.append(str(imagehash.whash(img)))
@@ -76,18 +77,22 @@ async def on_ready():
 async def on_message(message):
     if message.author == client.user:
         return
-
+    
+    hashes = []
     if(message.attachments):
         hashes = handle_images(message.attachments)
         hash_type = 'image'
     else:
         content = message.content
         if(link_format.match(content)):
-            req = requests.get(content)
-            # use url to deal with redirects
-            content = req.url.encode('utf-8')
-            hashes = [hashlib.sha256(content).hexdigest()]
-            hash_type = 'link'
+            # ignore gifs and links to the base of a server
+            parsed_url = urlparse(content)
+            if(parsed_url.netloc == 'tenor.com' or parsed_url.path):
+                req = requests.get(content)
+                # use url to deal with redirects
+                content = req.url.encode('utf-8')
+                hashes = [hashlib.sha256(content).hexdigest()]
+                hash_type = 'link'
 
     for hash in hashes:
         results = []
@@ -100,7 +105,7 @@ async def on_message(message):
             # source for perceptual hashing: https://lvngd.com/blog/determining-how-similar-two-images-are-python-perceptual-hashing/
             db_result = db.cursor.find({'type': hash_type})
             for image in db_result:
-                hamming = int(hash, 16) - int(image['content'], 16)
+                hamming = abs(int(hash, 16) - int(image['content'], 16))
                 if(hamming < args.threshold):
                     results.append(image)
 
