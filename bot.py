@@ -43,6 +43,15 @@ link_format = re.compile('http[s]?:\/\/.*')
 
 
 def handle_images(attachments):
+    '''
+    Gets image attachments and returns their hashes
+
+    param:
+    attachments: list of attachments from discord message
+
+    return:
+    list of hashes
+    '''
     hashes = []
     for attachment in attachments:
         if(attachment.url[0:39] == 'https://cdn.discordapp.com/attachments/'):
