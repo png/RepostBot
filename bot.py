@@ -7,6 +7,7 @@ import io
 
 import discord
 import imagehash
+import hashlib
 from PIL import Image
 
 from db import Database
@@ -82,15 +83,19 @@ async def on_message(message):
     else:
         content = message.content
         if(link_format.match(content)):
-            content = content.encode('utf-8')
+            req = requests.get(content)
+            # use url to deal with redirects
+            content = req.url.encode('utf-8')
             hashes = [hashlib.sha256(content).hexdigest()]
             hash_type = 'link'
 
     for hash in hashes:
         results = []
         if(hash_type == 'link'):
-            results.append(db.cursor.find_one(
-                {'content': hash, 'type': hash_type}))
+            result = db.cursor.find_one(
+                {'content': hash, 'type': hash_type})
+            if(result):
+                results.append(result)
         elif(hash_type == 'image'):
             # source for perceptual hashing: https://lvngd.com/blog/determining-how-similar-two-images-are-python-perceptual-hashing/
             db_result = db.cursor.find({'type': hash_type})
